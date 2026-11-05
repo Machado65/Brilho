@@ -126,8 +126,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         ticks += 1
         refreshDisplays()
 
-        // With the lid closed the built-in display is inactive and the sensor covered: the time of day stands in
-        let reading = builtin != nil ? sensor?.read() : nil
+        // With the lid closed the built-in display is inactive and its sensor covered: a display's sensor (a
+        // Studio Display's) stands in, else the time of day
+        let reading = sensor?.read(builtInActive: builtin != nil)
         if (reading == nil) != lightIsEstimate {
             lightIsEstimate = reading == nil
             lightSwitchedAt = Date()
@@ -563,6 +564,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func ramp() {
         var moving = false
         for display in displays.values where display.pending == nil && !display.sliding && display.level != display.target {
+            // Set by someone else on the way (a brightness key): stop, and let track() see who
+            if display.control == .native, display.level <= 1, let current = Backlight.get(display.id), abs(current - display.backlight) > 0.01 {
+                display.target = display.level
+                continue
+            }
             if display.level > 1 || display.target > 1 {
                 let gap = display.target - display.level
                 display.level = abs(gap) <= 0.001 ? display.target : display.level + (gap < 0 ? -1 : 1) * max(abs(gap) * 0.04, 0.001)

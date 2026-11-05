@@ -20,7 +20,12 @@ func diagnose() {
     print("Brilho \(appVersion), diagnostics (reads only)")
     print("macOS \(ProcessInfo.processInfo.operatingSystemVersionString), \(ProcessInfo.processInfo.processorCount) cores")
     if let sensor = LightSensor() {
-        print("Light sensor: " + (sensor.read().map { "\(Int($0.lux.rounded())) lux, \(Int($0.kelvin.rounded())) K" } ?? "no reading (lid closed?)"))
+        let readings = sensor.readings()
+        if readings.isEmpty { print("Light sensors: no reading (lid closed?)") }
+        for reading in readings {
+            print("Light sensor \(reading.product) (\(reading.builtIn ? "the Mac's" : "a display's")): "
+                + "\(Int(reading.lux.rounded())) lux, \(Int(reading.kelvin.rounded())) K")
+        }
     } else {
         print("Light sensor: none found")
     }
