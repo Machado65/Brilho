@@ -84,24 +84,52 @@ Linux as well.
 
 ## Install
 
-Brilho builds with the Xcode Command Line Tools alone (`xcode-select --install`):
+Brilho is installed from its source, which takes a couple of minutes and no
+Xcode.
+
+1. **Install Apple's Command Line Tools**, if you haven't (a terminal will say
+   so if they're there already):
+
+   ```sh
+   xcode-select --install
+   ```
+
+2. **Get Brilho and build it:**
+
+   ```sh
+   git clone https://github.com/Machado65/brilho.git
+   cd brilho
+   ./build.sh --local-identity
+   ```
+
+   This builds `~/Applications/Brilho.app` and starts it: a sun appears in the
+   menu bar. `--local-identity` makes a signing certificate of Brilho's own,
+   once, in a keychain of its own, so that macOS remembers Brilho's
+   permissions across updates.
+
+3. **Set it up**, from the sun in the menu bar:
+   - turn on **Open at Login**, so it keeps running;
+   - **Use Current Location** under Night Warmth, for sunset times, and set
+     your **wake-up time**;
+   - for each external monitor, **Calibrate** (by eye, against the built-in
+     display, in about a minute) or **Measure** it, so that its nits are right;
+   - if you have external monitors, **Allow…** the brightness keys for them.
+
+Then just use your Mac. Whenever the brightness isn't right, set it as you'd
+like it, with the keys, the panel or the monitor's buttons: that's what Brilho
+learns from.
+
+To update, from the `brilho` folder:
 
 ```sh
-git clone https://github.com/Machado65/brilho.git
-cd brilho
-./build.sh --local-identity
+git pull
+./build.sh
 ```
 
-That builds `~/Applications/Brilho.app` and starts it; the menu bar gets a sun.
-Turn on **Open at Login** in its panel to keep it running.
-
-`--local-identity` (needed once) makes a self-signed signing certificate in a
-keychain of its own, so that macOS keeps the Accessibility permission across
-rebuilds. Without it the app is signed ad hoc, and asks again after every
-build. Set `BRILHO_IDENTITY` to sign with a certificate of your own instead,
-and `BRILHO_APP` to build somewhere else.
-
-`./build.sh test` runs the tests.
+Set `BRILHO_IDENTITY` to sign with a certificate of your own, or `BRILHO_APP`
+to build somewhere else; without `--local-identity` the first time, the app is
+signed ad hoc, and macOS asks for the Accessibility permission again after
+every update. `./build.sh test` runs the tests.
 
 ## Permissions
 
@@ -147,12 +175,15 @@ failing. It can't be on the Mac App Store for the same reason.
 
 ## Uninstall
 
-Quit Brilho from its panel, then:
+Turn off **Open at Login**, quit Brilho from its panel, then:
 
 ```sh
 rm -rf ~/Applications/Brilho.app "$HOME/Library/Application Support/Brilho"
 defaults delete io.github.machado65.brilho
 ```
+
+Brilho turns off macOS's own automatic brightness, which would fight it: turn
+it back on in System Settings › Displays if you'd like it.
 
 ## Licence
 
