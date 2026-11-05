@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Machado65
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Brilho: automatic brightness that learns
+Documentation=https://github.com/Machado65/Brilho
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/brilho run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

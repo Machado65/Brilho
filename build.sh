@@ -2,11 +2,13 @@
 # SPDX-FileCopyrightText: 2026 Machado65
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Builds Brilho.app with SwiftPM (the Command Line Tools are enough, no Xcode)
-# into ~/Applications (or $BRILHO_APP), signs it and starts it again.
+# On a Mac, builds Brilho.app with SwiftPM (the Command Line Tools are enough,
+# no Xcode) into ~/Applications (or $BRILHO_APP), signs it and starts it again.
+# On Linux, builds brilho into ~/.local/bin and runs it as a systemd user
+# service, started with the desktop.
 #
 #   ./build.sh                   build, install and restart
-#   ./build.sh --local-identity  the same, making a local signing identity first
+#   ./build.sh --local-identity  the same, making a local signing identity first (Mac)
 #   ./build.sh --no-restart      build and install only
 #   ./build.sh test              run the tests
 #
@@ -16,6 +18,24 @@
 # but asks for Accessibility again after every build.
 set -eu
 cd "$(dirname "$0")"
+
+if [ "$(uname -s)" = Linux ]; then
+    [ "${1:-}" = test ] && exec swift test
+    swift build -c release --product brilho
+    bin=$(swift build -c release --show-bin-path)
+    mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+    # Replaced, not written over: the running one keeps its file
+    rm -f "$HOME/.local/bin/brilho"
+    cp "$bin/brilho" "$HOME/.local/bin/brilho"
+    cp Resources/brilho.service "$HOME/.config/systemd/user/brilho.service"
+    echo "installed ~/.local/bin/brilho"
+    [ "${1:-}" = --no-restart ] && exit 0
+    systemctl --user daemon-reload
+    systemctl --user enable brilho.service
+    systemctl --user restart brilho.service
+    echo "running: brilho status shows what it found"
+    exit 0
+fi
 
 if [ "${1:-}" = test ]; then
     # The Command Line Tools' swift test doesn't always find the testing macros by itself

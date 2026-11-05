@@ -1,13 +1,15 @@
 # Brilho
 
-Automatic brightness for the Mac that learns what you like.
+Automatic brightness that learns what you like, for the Mac and for Linux.
 
-Brilho follows the light in the room with the MacBook's ambient light sensor and
-sets every display to match: the built-in one, Apple's and HDR monitors through
-macOS, other monitors over DDC/CI, and the ones that answer neither by dimming
-their picture. Each time you correct it, it learns: not just "brighter", but
-brighter *in this light*, at this hour, in this app. It also warms the screens'
-white in the evening, as warm as you like it.
+Brilho follows the light in the room with your laptop's ambient light sensor
+and sets every display to match: the built-in one, and external monitors over
+DDC/CI. Each time you correct it, it learns: not just "brighter", but brighter
+*in this light*, at this hour, in this app. It also warms the screens' white in
+the evening, as warm as you like it.
+
+On a Mac it's a menu bar app; on Linux, a service you talk to with the `brilho`
+command (see [Linux](#linux)).
 
 *Brilho* is Portuguese for brightness.
 
@@ -71,21 +73,21 @@ others, and next to nothing for someone who doesn't.
 
 ## Requirements
 
-- An Apple Silicon Mac with macOS 14 or later.
-- An ambient light sensor, as in MacBooks, to follow the light. Without one,
-  or with the lid closed, Brilho follows the time of day instead, and doesn't
-  learn from corrections made meanwhile.
+- An Apple Silicon Mac with macOS 14 or later, or a Linux machine with systemd
+  (see [Linux](#linux)).
+- An ambient light sensor to follow the light: a MacBook's, or a display's
+  (Apple's Studio Display and Pro Display XDR have one), or on Linux, a
+  laptop's (most with one have it in the kernel's IIO). Without one, or with the
+  lid closed, Brilho follows the time of day instead, and doesn't learn from
+  corrections made meanwhile.
 - For DDC/CI, a monitor with it on (it's often in the monitor's menu). Over
-  some docks and adapters it doesn't get through; Brilho then dims in software.
-
-Brilho is a Mac app. Its core (the learning, Night Warmth's schedule, the colour
-and light maths) is plain Swift with no Apple frameworks, and its tests run on
-Linux as well.
+  some docks and adapters it doesn't get through; on a Mac, Brilho then dims
+  in software.
 
 ## Install
 
-Brilho is installed from its source, which takes a couple of minutes and no
-Xcode.
+Brilho is installed from its source, which takes a couple of minutes and, on a
+Mac, no Xcode. On Linux, see [Linux](#linux).
 
 1. **Install Apple's Command Line Tools**, if you haven't (a terminal will say
    so if they're there already):
@@ -131,9 +133,72 @@ to build somewhere else; without `--local-identity` the first time, the app is
 signed ad hoc, and macOS asks for the Accessibility permission again after
 every update. `./build.sh test` runs the tests.
 
+## Linux
+
+On Linux Brilho is a service, `brilho`, started with your desktop, and does what
+the Mac app does but its panel: it follows the light with the laptop's panel
+and the monitors, learns from every change you make, and warms the screens at
+night. The learning is the same code as on the Mac.
+
+It's new: it's tested on a made-up laptop (a light sensor and a panel in a fake
+`/sys`, run for real) and against a virtual X server, but not yet on many real
+machines. If something doesn't work on yours, `brilho status` and an issue are
+very welcome.
+
+**Install.** You need git and Swift 6 ([swift.org/install](https://www.swift.org/install/linux/)):
+
+```sh
+git clone https://github.com/Machado65/Brilho.git
+cd Brilho
+./build.sh
+```
+
+That builds `~/.local/bin/brilho` (most distributions have that folder in the
+`PATH`) and runs it as a systemd user service. Then:
+
+```sh
+brilho status                 # what it found
+brilho location 51.51 -0.13   # your latitude and longitude, for sunset times
+brilho wake 07:30             # when you wake, for when the night starts
+```
+
+**Using it.** Change the brightness as you always do, with the keys or your
+desktop's slider: Brilho learns from it. For monitors, use their own buttons,
+or `brilho brighter` / `brilho dimmer` (bind them to keys in your desktop's
+shortcuts; add a monitor's name to set only that one). `brilho warmer` and
+`brilho cooler` set Night Warmth's strength; `brilho pause` and `brilho resume`
+stop and restart it; `brilho` alone lists everything.
+
+**What it uses:**
+- the light sensor through IIO (`/sys/bus/iio`);
+- the laptop's panel through `/sys/class/backlight`, set through
+  systemd-logind, so no root is needed;
+- monitors over DDC/CI through `/dev/i2c-*`, which needs the `i2c-dev` module
+  and access to those devices:
+
+  ```sh
+  echo i2c-dev | sudo tee /etc/modules-load.d/i2c-dev.conf
+  sudo modprobe i2c-dev
+  sudo usermod -aG i2c "$USER"   # where the devices belong to an i2c group; then log in again
+  ```
+
+- Night Warmth through GNOME's own Night Light on GNOME (which goes from 4700 K
+  down to 1700 K), and through X11's gamma ramps on other X11 desktops, whose
+  own night light should then be off. On other Wayland desktops (KDE Plasma,
+  Sway, Hyprland), use their own night light for now;
+- the app in front, for learning by app, on X11 only (Wayland doesn't say).
+
+Brilho turns GNOME's own automatic brightness off while it runs (it follows
+the same sensor and would fight it), and puts it and Night Light back as they
+were when it stops. What it learns is kept in
+`~/.local/state/brilho/state.json`, its settings in
+`~/.config/brilho/config.json`. To remove it:
+`systemctl --user disable --now brilho`, then delete `~/.local/bin/brilho`,
+`~/.config/systemd/user/brilho.service` and those two folders.
+
 ## Permissions
 
-All optional:
+On a Mac, all optional:
 
 - **Accessibility**, for the brightness keys on displays macOS can't dim. Brilho
   listens only to the media keys, and acts only on the brightness ones.

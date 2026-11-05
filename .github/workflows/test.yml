@@ -16,11 +16,21 @@ jobs:
       - name: Test
         run: swift test
 
-  # The app is the Mac's; its core (the learning, Night Warmth's schedule, the colours) runs anywhere
+  # The service, and everything shared with the Mac, on Linux: against a virtual X server, and run for real on a
+  # made-up laptop
   linux:
     runs-on: ubuntu-latest
     container: swift:6.2
     steps:
       - uses: actions/checkout@v7
-      - name: Test the core
-        run: swift test
+      - name: An X server for the X11 tests
+        run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb x11-utils libxrandr2 libxss1
+      - name: Test
+        run: |
+          Xvfb :99 -screen 0 1280x800x24 &
+          sleep 1
+          DISPLAY=:99 XDG_SESSION_TYPE=x11 swift test
+      - name: The service, end to end
+        run: |
+          swift build -c release --product brilho
+          sh Tests/linux-e2e.sh "$(swift build -c release --show-bin-path)/brilho"
