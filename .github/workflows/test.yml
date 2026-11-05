@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Machado65
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release
+      - name: Test
+        run: swift test
+
+  # The app is the Mac's; its core (the learning, Night Warmth's schedule, the colours) runs anywhere
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the core
+        run: swift test
