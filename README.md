@@ -97,8 +97,8 @@ Xcode.
 2. **Get Brilho and build it:**
 
    ```sh
-   git clone https://github.com/Machado65/brilho.git
-   cd brilho
+   git clone https://github.com/Machado65/Brilho.git
+   cd Brilho
    ./build.sh --local-identity
    ```
 
@@ -119,7 +119,7 @@ Then just use your Mac. Whenever the brightness isn't right, set it as you'd
 like it, with the keys, the panel or the monitor's buttons: that's what Brilho
 learns from.
 
-To update, from the `brilho` folder:
+To update, from the `Brilho` folder:
 
 ```sh
 git pull
