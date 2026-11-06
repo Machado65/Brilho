@@ -5,9 +5,11 @@
 import AppKit
 import SwiftUI
 
-/// `Brilho --snapshot <file.png> [dark]`, in debug builds: the panel drawn with
-/// made-up displays, to look at its layout without the menu bar.
-func snapshot(to path: String, dark: Bool) {
+/// `Brilho --snapshot <file.png> [dark] [xdr] [hud]`, in debug builds: the
+/// panel drawn with made-up displays, to look at its layout without the menu
+/// bar; with `xdr`, the built-in display past its SDR white; with `hud`, the
+/// indicator a brightness key shows instead.
+func snapshot(to path: String, dark: Bool, xdr: Bool, hud: Bool) {
     final class KeyWindow: NSWindow { override var isKeyWindow: Bool { true } }
     let model = PanelModel()
     model.lux = 182
@@ -20,7 +22,8 @@ func snapshot(to path: String, dark: Bool) {
     model.canCalibrate = true
     model.openAtLogin = true
     model.rows = [
-        PanelModel.Row(id: 1, name: "Built-in Retina Display", brightness: 0.55, nits: 186, brightnessRange: 0...1, contrast: nil, volume: nil,
+        PanelModel.Row(id: 1, name: "Built-in Retina Display", brightness: xdr ? 1.5 : 0.55, nits: xdr ? 749 : 186,
+                       brightnessRange: 0...(xdr ? 2 : 1), contrast: nil, volume: nil,
                        controlMax: [:], hdr: nil, roomColour: nil, white: 3900, external: false, software: false, measurable: true,
                        calibrated: true),
         PanelModel.Row(id: 2, name: "PA279CRV", brightness: 0.42, nits: 160, brightnessRange: 0...1, contrast: 80, volume: 30,
@@ -36,8 +39,11 @@ func snapshot(to path: String, dark: Bool) {
                           adjustments: [PanelModel.Point(lux: 182, nits: 186)]),
         PanelModel.Series(id: 2, name: "PA279CRV", slot: 1, day: curve(0.9), night: nil, adjustments: []),
     ]
-    let view = PanelView(model: model).environment(\.controlActiveState, .key).background(Color(nsColor: .windowBackgroundColor))
-    let hosting = NSHostingView(rootView: view)
+    let hudModel = HUD.Model()
+    hudModel.level = xdr ? 1.5 : 0.55
+    hudModel.top = 2
+    let panel = PanelView(model: model).environment(\.controlActiveState, .key).background(Color(nsColor: .windowBackgroundColor))
+    let hosting = NSHostingView(rootView: hud ? AnyView(HUDView(model: hudModel)) : AnyView(panel))
     hosting.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     hosting.frame.size = hosting.fittingSize
     let window = KeyWindow(contentRect: hosting.frame, styleMask: .borderless, backing: .buffered, defer: false)

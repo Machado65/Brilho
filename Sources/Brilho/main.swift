@@ -21,7 +21,7 @@ if arguments.contains("--version") {
     #if DEBUG
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.accessory)
-    snapshot(to: arguments[index + 1], dark: arguments.contains("dark"))
+    snapshot(to: arguments[index + 1], dark: arguments.contains("dark"), xdr: arguments.contains("xdr"), hud: arguments.contains("hud"))
     #endif
 } else if arguments.contains("--help") || arguments.contains("-h") {
     print("""

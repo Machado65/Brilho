@@ -25,6 +25,8 @@ extension Controller {
             display.adjustingContrast = false
         }
         if warmthOverride != nil { editingWarmth(false) }
+        // What the menu bar held back while the panel hung from it, once it's gone
+        DispatchQueue.main.async { [weak self] in self?.updateIcon() }
     }
 
     func updatePanel() {

@@ -5,16 +5,21 @@ import AppKit
 import SwiftUI
 
 /// A brightness indicator like macOS's, on a display a brightness key just
-/// changed where macOS shows none.
+/// changed where macOS shows none, and for the built-in display's XDR boost.
 final class HUD {
-    final class Model: ObservableObject { @Published var level = 0.0 }
+    final class Model: ObservableObject {
+        @Published var level = 0.0
+        @Published var top = 1.0 // past 1, as far as the XDR boost goes
+    }
 
     private let model = Model()
     private var panel: NSPanel?
     private var hide: DispatchWorkItem?
 
-    func show(_ level: Double, on screen: NSScreen) {
+    /// `level` past 1 is the built-in display's XDR boost, up to `top`.
+    func show(_ level: Double, top: Double = 1, on screen: NSScreen) {
         model.level = level
+        model.top = top
         let panel = panel ?? make()
         panel.setFrame(NSRect(x: screen.frame.midX - 100, y: screen.frame.minY + screen.frame.height * 0.12, width: 200, height: 200),
                        display: true)
@@ -48,13 +53,18 @@ final class HUD {
 struct HUDView: View {
     @ObservedObject var model: HUD.Model
 
+    /// Past full, XDR says so, and the bar is the boost's: from full to as far as it goes.
+    private var xdr: Bool { model.level > 1 }
+    private var filled: Double { xdr ? (model.level - 1) / max(model.top - 1, 0.01) : model.level }
+
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: xdr ? 12 : 22) {
             Image(systemName: "sun.max.fill").font(.system(size: 56))
+            if xdr { Text("XDR").font(.system(size: 15, weight: .semibold)) }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.3))
-                    Capsule().fill(Color(nsColor: .systemRed)).frame(width: max(geometry.size.width * model.level, 6))
+                    Capsule().fill(Color(nsColor: .systemRed)).frame(width: max(geometry.size.width * min(filled, 1), 6))
                 }
             }
             .frame(height: 6)
@@ -63,6 +73,6 @@ struct HUDView: View {
         .frame(width: 200, height: 200)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement()
-        .accessibilityLabel("Brightness \(Int((model.level * 100).rounded())) percent")
+        .accessibilityLabel("\(xdr ? "XDR brightness" : "Brightness") \(Int((model.level * 100).rounded())) percent")
     }
 }

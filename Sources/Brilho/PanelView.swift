@@ -123,6 +123,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(row.name.uppercased())
+                if row.brightness > 1 { Text("XDR").fontWeight(.semibold).foregroundStyle(accent) }
                 Spacer()
                 Text(verbatim: row.white.map { "\(row.nits) nits · \($0) K" } ?? "\(row.nits) nits").monospacedDigit()
             }

@@ -39,7 +39,8 @@ command (see [Linux](#linux)).
   1000 nits) in direct sun, and back down as the light drops. At full,
   brightness up turns XDR on in any light and takes it further, and brightness
   down turns it off; what you set is learnt like anything else. With the
-  Automatic XDR switch off it never turns on by itself.
+  Automatic XDR switch off it never turns on by itself. While it's on, the
+  menu bar says XDR beside the sun.
 - **HDR switch, Room Colour, Open at Login**, and `brilho://auto` and
   `brilho://xdr` URLs to toggle those from a keyboard shortcut.
 

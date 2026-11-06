@@ -163,12 +163,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
-        if ((builtin?.level ?? 0) > 1) != boosting {
-            boosting.toggle()
-            if !boosting { heldBoostLight = nil }
-            updateIcon()
-            log(boosting ? "XDR: past SDR at \(lux(light ?? 0)) lux" : "XDR: back to SDR")
-        }
+        updateBoosting()
 
         // Something (System Settings, another app) may turn it back on: every 30 s is enough to notice
         if enabled, Date().timeIntervalSince(systemAutoCheckedAt) > 30 {
@@ -282,9 +277,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func track(_ display: Display) {
         guard display.ready, !display.sliding else { return }
         if let keyedAt = display.keyedAt {
-            guard Date().timeIntervalSince(keyedAt) > 1.5 else { return }
-            display.keyedAt = nil
-            manual(display)
+            // Unless a key Brilho left to macOS came since (brightness down, out of XDR): that's the one to see to, below,
+            // at once, and to learn once it settles
+            if display.control == .native, let brightness = Backlight.get(display.id), abs(brightness - display.backlight) > 0.01 {
+                display.keyedAt = nil
+            } else {
+                guard Date().timeIntervalSince(keyedAt) > 1.5 else { return }
+                display.keyedAt = nil
+                manual(display)
+            }
         }
 
         // Brightness keys and the system can change a native display; the others only change from Brilho, or a DDC one's buttons
@@ -474,7 +475,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             display.pending = nil
             display.keyedAt = Date()
             applyGamma(display)
-            hud.show(1, on: screen)
+            updateBoosting()
+            hud.show(display.level, top: maxBoost, on: screen)
             return true
         }
         let step = fine ? 1.0 / 64 : 1.0 / 16
@@ -640,9 +642,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         apply(builtin)
     }
 
+    /// Whether the built-in display is past its SDR white, in XDR, as the menu bar shows.
+    func updateBoosting() {
+        guard ((builtin?.level ?? 0) > 1) != boosting else { return }
+        boosting.toggle()
+        if !boosting { heldBoostLight = nil }
+        updateIcon()
+        log(boosting ? "XDR: past SDR at \(lux(light ?? 0)) lux" : "XDR: back to SDR")
+    }
+
     func updateIcon() {
-        statusItem.button?.image = NSImage(systemSymbolName: boosting ? "sun.max.fill" : "sun.max", accessibilityDescription: "Brilho")
-        statusItem.button?.appearsDisabled = !enabled
+        guard let button = statusItem.button else { return }
+        button.image = NSImage(systemSymbolName: boosting ? "sun.max.fill" : "sun.max", accessibilityDescription: "Brilho")
+        button.appearsDisabled = !enabled
+        // In XDR it says so beside the sun; not while the panel hangs from it, which would move with it
+        guard !popover.isShown else { return }
+        button.title = boosting ? "XDR" : ""
+        button.imagePosition = boosting ? .imageLeading : .imageOnly
+        statusItem.length = boosting ? NSStatusItem.variableLength : NSStatusItem.squareLength
     }
 }
 
