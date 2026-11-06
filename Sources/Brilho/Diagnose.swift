@@ -74,7 +74,8 @@ func diagnose() {
         let kept = stored[key]
         print("  levels: " + ((kept?.levels?.keys.sorted()).map { $0.isEmpty ? "guessed" : "kept for " + $0.joined(separator: ", ") } ?? "guessed"))
         let start = Date()
-        let preference = Learned.brightness(key, stored: stored, independent: independent)
+        let white = builtin ? (kept?.levels?["builtin"].map { Levels(points: $0, calibrated: true) } ?? .builtinGuess).nits(1) : nil
+        let preference = Learned.brightness(key, stored: stored, independent: independent, white: white)
         let elapsed = Date().timeIntervalSince(start)
         print("  \(preference.adjustments.count) brightness adjustments, fitted in \(String(format: "%.1f", elapsed * 1000)) ms; "
             + "\(kept?.contrast.count ?? 0) contrast" + (kept?.contrastBase.map { " (from \($0))" } ?? ""))

@@ -6,8 +6,9 @@ import MetalKit
 
 /// Takes the built-in XDR panel past its 500-nit SDR limit: one pixel of HDR
 /// content makes macOS open the panel's headroom (the backlight goes to 1600
-/// nits and SDR is scaled down to match), and the display's gamma table,
-/// multiplied by the factor (along with its white), scales SDR back up into it.
+/// nits and SDR is scaled down to match), and the display's gamma table, its
+/// output gamma encoded, multiplied by the factor's 1/2.2 power (along with its
+/// white), scales SDR's light back up into it by the factor.
 final class XDR: NSObject, MTKViewDelegate {
     private let queue = MTLCreateSystemDefaultDevice()?.makeCommandQueue()
     private var trigger: NSWindow?

@@ -226,6 +226,11 @@ public final class Engine {
             followed.offset = followed.level - followed.levels.setting(nits: nits)
             return
         }
+        let wanted = followed.levels.setting(nits: pow(10, followed.preference.value(at: light, in: context)))
+        if Learned.censored(followed.level, wanted: wanted, range: 0...1) {
+            log("\(followed.screen.name): \(followed.level > 0.5 ? "full" : "at its lowest"), as the light asks: nothing to learn")
+            return
+        }
         let setting = min(max(followed.level - followed.offset, 0), 1)
         let nits = followed.levels.nits(setting)
         followed.preference.learn(x: light, value: log10(nits), context: context, at: date, setting: setting, mode: followed.screen.mode)

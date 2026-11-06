@@ -45,10 +45,9 @@ struct PanelView: View {
             switchRow("Auto Brightness", isOn: model.auto, set: model.setAuto)
             nightWarmth
             if model.xdrAvailable {
-                switchRow("XDR Brightness", isOn: model.xdr, set: model.setXDR).disabled(!model.xdr && !model.xdrAllowed)
-                if !model.xdr && !model.xdrAllowed {
-                    Text("Only in bright light, above 1000 lux").font(.caption).foregroundStyle(.secondary)
-                }
+                switchRow("Automatic XDR", isOn: model.xdr, set: model.setXDR)
+                Text(model.auto ? "In sunlight. At full, brightness up turns XDR on too" : "Only with Auto Brightness on")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             ForEach(model.rows) { row in display(row) }

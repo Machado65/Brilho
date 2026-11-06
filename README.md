@@ -34,9 +34,12 @@ command (see [Linux](#linux)).
   nits) or calibrated by eye against the built-in display, so the same
   preference gives the same light on any of them. A new monitor starts from what
   the others have learnt.
-- **XDR in the sun.** On XDR MacBooks, the built-in display can go past its
-  500-nit SDR limit, only in bright light (over 1000 lux), and back when the
-  light drops.
+- **XDR in the sun.** On XDR MacBooks the built-in display goes past its SDR
+  white by itself in sunlight: from about 5000 lux, up to twice it (about
+  1000 nits) in direct sun, and back down as the light drops. At full,
+  brightness up turns XDR on in any light and takes it further, and brightness
+  down turns it off; what you set is learnt like anything else. With the
+  Automatic XDR switch off it never turns on by itself.
 - **HDR switch, Room Colour, Open at Login**, and `brilho://auto` and
   `brilho://xdr` URLs to toggle those from a keyboard shortcut.
 
@@ -58,7 +61,10 @@ correction comes in (typically in under a millisecond):
 - older corrections count less as newer ones come in, not as time passes, so a
   curve you stopped correcting because it's right is never forgotten;
 - the newest correction always holds: the curve passes through what you just
-  chose.
+  chose;
+- except a correction to the end of the range when the curve already asked for
+  at least as much, like full brightness in the sun: it only says "as far as it
+  goes", and learnt it would pull the curve back to the display's limit.
 
 Brightness is learnt in log10(nits), contrast in DDC steps, and warmth as the
 strength of Night Warmth (0 is none, 1 the schedule). A new display's prior is

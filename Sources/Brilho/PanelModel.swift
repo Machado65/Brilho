@@ -56,7 +56,6 @@ final class PanelModel: ObservableObject {
     @Published var auto = true
     @Published var xdr = false
     @Published var xdrAvailable = false
-    @Published var xdrAllowed = false
     @Published var canCalibrate = false
     @Published var measuring: CGDirectDisplayID?
     @Published var openAtLogin = false

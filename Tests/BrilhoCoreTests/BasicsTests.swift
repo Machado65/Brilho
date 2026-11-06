@@ -109,6 +109,51 @@ struct PublishedSunset: Sendable, CustomTestStringConvertible {
         }
     }
 
+    @Test func pastFullTheBoostMultipliesTheWhite() {
+        let levels = Levels.builtinGuess
+        #expect(abs(levels.nits(1.5) - levels.nits(1) * 1.5) < 1e-9)
+        #expect(abs(levels.nits(2) - levels.nits(1) * 2) < 1e-9)
+        #expect(abs(levels.nits(1.000001) - levels.nits(1)) < 0.01) // no step at 1
+        #expect(levels.setting(nits: levels.nits(1.5)) == 1) // a setting from nits stays within the range
+    }
+
+    @Test func anXDRDisplaysPriorStaysInSDRUntilTheSun() {
+        func x(_ lux: Double) -> Double { log10(lux + 1) }
+        #expect(Learned.boost(at: x(1000), top: 2) == 1)
+        #expect(Learned.boost(at: x(5000), top: 2) < 1.001)
+        #expect(abs(Learned.boost(at: x(30000), top: 2) - 2) < 0.001)
+        #expect(Learned.boost(at: x(100_000), top: 2) == 2)
+        #expect(abs(Learned.boost(at: (x(5000) + x(30000)) / 2, top: 2) - 2.squareRoot()) < 0.001) // evenly in log nits
+        // The built-in display's prior: the default below its white, its white in a bright room, the boost's in the sun
+        let white = 500.0
+        let preference = Learned.brightness("builtin", stored: [:], independent: [:], white: white)
+        func nits(_ lux: Double) -> Double { pow(10, preference.value(at: x(lux), in: Context())) }
+        #expect(abs(nits(100) - pow(10, defaultLogNits(at: x(100)))) < 1)
+        #expect(abs(nits(3000) - white) < 15)
+        #expect(nits(13000) > white * 1.3 && nits(13000) < white * 1.6)
+        #expect(abs(nits(30000) - 2 * white) < 60)
+        // Another display's is the default's
+        let other = Learned.brightness("1507-9616-14488", stored: [:], independent: [:])
+        #expect(abs(other.value(at: x(13000), in: Context()) - defaultLogNits(at: x(13000))) < 0.02)
+    }
+
+    @Test func aSettingAtTheLimitTheCurveAlreadyReachesIsNotLearnt() {
+        // Full in the sun, with the curve asking for more: nothing to learn
+        #expect(Learned.censored(1, wanted: 1, range: 0...1))
+        #expect(Learned.censored(1, wanted: 3.5, range: 0...1))
+        #expect(Learned.censored(0.999, wanted: 1.2, range: 0...1))
+        // Full when the curve asked for less, or less than full: the user's
+        #expect(!Learned.censored(1, wanted: 0.8, range: 0...1))
+        #expect(!Learned.censored(0.9, wanted: 3.5, range: 0...1))
+        // The bottom, likewise
+        #expect(Learned.censored(0, wanted: 0, range: 0...1))
+        #expect(!Learned.censored(0, wanted: 0.2, range: 0...1))
+        // With the XDR boost the top is the boost's: full SDR is then a choice
+        #expect(Learned.censored(2, wanted: 3.5, range: 0...2))
+        #expect(!Learned.censored(1, wanted: 3.5, range: 0...2))
+        #expect(!Learned.censored(1.5, wanted: 1.2, range: 0...2))
+    }
+
     @Test func keptLevelsAreSortedAndRising() {
         let kept = Levels.kept([Level(setting: 1, nits: 300), Level(setting: 0, nits: 50), Level(setting: 0.5, nits: 40)])
         #expect(kept.points.map(\.setting) == [0, 0.5, 1])

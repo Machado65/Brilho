@@ -48,8 +48,6 @@ extension Controller {
         // Only for the built-in display, and only with the lid open
         let xdrAvailable = builtin.flatMap { screen($0.id) }.map { $0.maximumPotentialExtendedDynamicRangeColorComponentValue > 1 } ?? false
         if model.xdrAvailable != xdrAvailable { model.xdrAvailable = xdrAvailable }
-        let xdrAllowed = !lightIsEstimate && (light ?? 0) >= xdrLight
-        if model.xdrAllowed != xdrAllowed { model.xdrAllowed = xdrAllowed }
         if model.canCalibrate != (builtin != nil) { model.canCalibrate = builtin != nil }
         if model.measuring != measuring { model.measuring = measuring }
         let wakeMinutes = Int(UserDefaults.standard.double(forKey: "wakeTime"))
@@ -62,8 +60,8 @@ extension Controller {
         let rows = sorted.map { display in
             PanelModel.Row(
                 id: display.id, name: display.name, brightness: display.level, nits: Int(display.nits.rounded()),
-                // In XDR the built-in display's slider is the boost, from 100% (480 nits) up
-                brightnessRange: xdr && display.builtin ? 1...maxBoost : 0...1,
+                // Past 100% the built-in display's XDR boost
+                brightnessRange: 0...max(xdrPossible(display) ? maxBoost : 1, display.level),
                 contrast: display.controls[.contrast].map { Double($0.value) }, volume: display.controls[.volume].map { Double($0.value) },
                 controlMax: display.controls.mapValues { Double($0.max) }, hdr: display.hdr,
                 roomColour: display.control != .native && !fluxRunning ? display.roomColour : nil,
@@ -77,7 +75,9 @@ extension Controller {
         // night, within what it can do
         let samples = stride(from: 0.0, through: 4.0, by: 0.1).map { pow(10, $0) }
         let series = sorted.enumerated().map { slot, display in
-            let reach = (display.control == .ddc ? display.levels.minNits * 0.3 : display.levels.minNits)...display.levels.maxNits
+            // The built-in display reaches past its SDR white with the XDR boost, which only bright light calls for
+            let top = display.builtin && xdr && enabled && xdrAvailable ? display.levels.nits(maxBoost) : display.levels.maxNits
+            let reach = (display.control == .ddc ? display.levels.minNits * 0.3 : display.levels.minNits)...top
             func curve(_ night: Double) -> [PanelModel.Point] {
                 var context = now.context
                 context.night = night
@@ -110,6 +110,7 @@ extension Controller {
             display.level = value
             display.target = value
             display.dim = 1 // the slider is the backlight alone
+            if display.builtin, value > 1, !xdr { heldBoostLight = light }
             apply(display)
             applyGamma(display)
         }
@@ -132,17 +133,12 @@ extension Controller {
         }
     }
 
-    /// A brightness slider let go is a manual adjustment like any other. In XDR
-    /// it sets the boost instead.
+    /// A brightness slider let go is a manual adjustment like any other, the
+    /// XDR boost's included.
     func finishSliding(_ display: Display) {
         guard display.sliding else { return }
         display.sliding = false
-        if xdr && display.builtin {
-            xdrLevel = display.level
-            UserDefaults.standard.set(xdrLevel, forKey: "xdrLevel")
-        } else {
-            manual(display)
-        }
+        manual(display)
     }
 
     /// The Warmth slider sets every screen's white as it moves.
@@ -176,27 +172,30 @@ extension Controller {
         }
     }
 
-    /// Turning it on also ends XDR: back to following the light everywhere.
+    /// The XDR boost is part of it: turned off, the built-in display eases back to SDR.
     func setAuto(_ on: Bool) {
         enabled = on
         UserDefaults.standard.set(enabled, forKey: "enabled")
-        for display in displays.values { display.target = display.level }
-        if on {
-            endXDR(gradually: true)
-            systemAutoCheckedAt = .distantPast
-        }
+        for display in displays.values { display.target = on ? display.level : min(display.level, 1) }
+        if on { systemAutoCheckedAt = .distantPast }
+        startRamp()
         updateIcon()
         updatePanel()
         log("auto brightness \(enabled ? "on" : "off")")
     }
 
+    /// Automatic XDR: whether the built-in display goes past its SDR white by
+    /// itself in sunlight, as far as what's learnt asks. Off, it leaves XDR now;
+    /// brightness up at full still takes it there.
     func setXDR(_ on: Bool) {
-        if on {
-            startXDR()
-        } else {
-            endXDR(gradually: true)
+        xdr = on
+        UserDefaults.standard.set(on, forKey: "xdr")
+        if !on, let builtin, builtin.target > 1 {
+            builtin.target = 1
+            startRamp()
         }
         updatePanel()
+        log("automatic XDR \(on ? "on" : "off")")
     }
 
     /// The display goes black for a moment while it switches; refreshDisplays then

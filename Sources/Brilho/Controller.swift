@@ -10,7 +10,6 @@ import SwiftUI
 final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let interval = 0.5
     let maxBoost = 2.0 // ~1000 nits, what the panel sustains over the whole screen
-    let xdrLight = log10(1001.0) // XDR is for the sun: not below 1000 lux
     /// The least change in light worth making, in decades: about 3%, under what the eye notices.
     let hysteresis = 0.012
     let sensor = LightSensor()
@@ -34,10 +33,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var lightIsEstimate = false // lid closed: the light comes from the time of day, and nothing is learnt from it
     var roomKelvin: Double? // smoothed
     var enabled = true
-    var xdr = false // not kept across launches: it's for a moment in the sun, and costs battery
-    var xdrLevel = 1.6
-    var levelBeforeXDR = 1.0
-    var dimSince: Date? // when the light dropped below XDR's
+    var xdr = true // Automatic XDR: the built-in display goes past its SDR white by itself, in sunlight
+    var boosting = false // past it now, as the menu bar icon shows
+    var heldBoostLight: Double? // the light it was taken past it by hand at, with Automatic XDR off
     var calibration: Calibration?
     var calibrationWindows: [NSWindow] = []
     var quietUntil = Date.distantPast // no learning right after a display wakes
@@ -60,10 +58,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .contains(where: { $0 != .current }) { exit(0) }
 
         let defaults = UserDefaults.standard
-        defaults.register(defaults: ["enabled": true, "xdrLevel": xdrLevel, "nightWarmth": true, "wakeTime": 7.5 * 60])
+        defaults.register(defaults: ["enabled": true, "xdr": true, "nightWarmth": true, "wakeTime": 7.5 * 60])
         nightWarmth = defaults.bool(forKey: "nightWarmth")
         enabled = defaults.bool(forKey: "enabled")
-        xdrLevel = min(max(defaults.double(forKey: "xdrLevel"), 1), maxBoost)
+        xdr = defaults.bool(forKey: "xdr")
         if let data = defaults.data(forKey: "preferences") {
             do {
                 stored = try JSONDecoder().decode([String: Stored].self, from: data)
@@ -109,7 +107,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             [weak self] _ in
             // Picked up again, at whatever brightness they wake with
             self?.displays = [:]
-            self?.endXDR()
+            self?.boost.off()
         }
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.tick() }
         timer.tolerance = 0.1
@@ -156,7 +154,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 if display.control == .ddc { poll(display) }
                 if display.control == .software { probeDDC(display) }
             }
-            if !keys.running, displays.values.contains(where: { $0.control != .native }) { keys.start() }
+            // For the displays macOS can't dim, and the built-in one's XDR boost
+            if !keys.running, displays.values.contains(where: { $0.control != .native || xdrPossible($0) }) { keys.start() }
             let flux = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "org.herf.Flux" }
             if flux != fluxRunning {
                 fluxRunning = flux
@@ -164,14 +163,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
-        if xdr, lightIsEstimate || (light ?? 0) < xdrLight {
-            if Date().timeIntervalSince(dimSince ?? Date()) > 30 {
-                log("XDR: below 1000 lux for half a minute")
-                endXDR(gradually: true)
-            }
-            dimSince = dimSince ?? Date()
-        } else {
-            dimSince = nil
+        if ((builtin?.level ?? 0) > 1) != boosting {
+            boosting.toggle()
+            if !boosting { heldBoostLight = nil }
+            updateIcon()
+            log(boosting ? "XDR: past SDR at \(lux(light ?? 0)) lux" : "XDR: back to SDR")
         }
 
         // Something (System Settings, another app) may turn it back on: every 30 s is enough to notice
@@ -200,7 +196,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         displays = displays.filter { id, display in
             active.contains(id) && (display.builtin || (display.control == .native) == Backlight.canChange(id))
         }
-        if builtin == nil { endXDR() }
+        if builtin == nil { boost.off() }
         for id in active where displays[id] == nil { add(id) }
     }
 
@@ -216,7 +212,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let guess: Levels = isBuiltin ? .builtinGuess : control == .native ? .nativeGuess : control == .ddc ? .ddcGuess : .softwareGuess
         let levels = stored[key]?.levels?[mode].map { Levels(points: $0, calibrated: true) } ?? guess
         let display = Display(id: id, key: key, builtin: isBuiltin, control: control, levels: levels,
-                              brightness: brightnessPreference(key),
+                              brightness: brightnessPreference(key, white: isBuiltin ? levels.nits(1) : nil),
                               level: control == .native ? Backlight.get(id) ?? 0.5 : control == .ddc ? 0.5 : 1)
         display.ddc = control == .software ? nil : ddc
         display.hdr = isBuiltin ? nil : HDR.isOn(id)
@@ -255,7 +251,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // MARK: Preferences
 
-    func brightnessPreference(_ key: String) -> Preference { Learned.brightness(key, stored: stored, independent: independent) }
+    /// The built-in display's prior stays at its SDR white until the light is bright enough for XDR.
+    func brightnessPreference(_ key: String, white: Double? = nil) -> Preference {
+        let white = key == "builtin" ? white ?? builtin?.levels.nits(1) : nil
+        return Learned.brightness(key, stored: stored, independent: independent, white: white, boostTop: maxBoost)
+    }
     func independentBrightness(_ key: String) -> Preference { Learned.independent(key, stored: stored) }
 
     /// After a display's adjustments change, every other one's prior has too.
@@ -292,10 +292,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let brightness = Backlight.get(display.id) else { return }
             if abs(brightness - display.backlight) > 0.01 {
                 if display.level > 1 {
-                    // Dimmed from under the boost: that's the end of XDR
+                    // Dimmed from under the boost (a key Brilho didn't catch, or the system): out of it at once
                     display.level = 1
                     display.target = 1
-                    endXDR()
+                    applyGamma(display)
                 }
                 // Changed by someone else: wait until it stops moving to decide by whom
                 let user = (display.pending?.user ?? false) || recentlyAdjusted()
@@ -312,17 +312,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         if enabled, let light {
             followContrast(display, light)
-            if !(xdr && display.builtin) {
-                let nits = goalNits(display, light)
-                let goal = min(max(display.levels.setting(nits: nits) + display.offset, 0), 1)
-                // Only a change the eye would notice: the light moves in small steps all day
-                if abs(log10(display.levels.nits(goal)) - log10(display.levels.nits(min(display.target, 1)))) > hysteresis {
-                    display.target = goal
-                    startRamp()
+            let nits = goalNits(display, light)
+            var goal = min(max(display.levels.setting(nits: nits) + display.offset, 0), 1)
+            if xdrPossible(display) {
+                if xdr, goal >= 1 {
+                    // Automatic XDR: past SDR white as far as the curve asks, up to ~1000 nits; worth the HDR mode from
+                    // a tenth more light, and kept until the curve asks for no more than SDR, so a light that wavers
+                    // around where it starts doesn't switch it on and off
+                    let boost = min(max(nits / display.levels.nits(1), 1), maxBoost)
+                    goal = display.level > 1 || boost >= 1.1 ? boost : 1
+                } else if !xdr, display.level > 1, let held = heldBoostLight, light > held - 0.5 {
+                    // Taken past full by hand with Automatic XDR off: held until brightness down, or a third of the light
+                    goal = display.target
                 }
-                // Below the lowest a DDC display's backlight goes, the rest comes off the gamma table, down to 30% of the light
-                display.dim = display.control == .ddc && !fluxRunning ? min(max(nits / display.levels.minNits, 0.3), 1) : 1
             }
+            // Only a change the eye would notice: the light moves in small steps all day
+            if abs(log10(display.levels.nits(goal)) - log10(display.levels.nits(display.target))) > hysteresis {
+                display.target = goal
+                startRamp()
+            }
+            // Below the lowest a DDC display's backlight goes, the rest comes off the gamma table, down to 30% of the light
+            display.dim = display.control == .ddc && !fluxRunning ? min(max(nits / display.levels.minNits, 0.3), 1) : 1
         }
         applyGamma(display)
     }
@@ -350,7 +360,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         case .ddc: display.dim
         case .software: Levels.softwareLight(display.backlight)
         }
-        let factors = [gains.0, gains.1, gains.2].map { Float(pow($0 * light, 1 / 2.2)) * boost }
+        // All of them light factors, and the table's output gamma encoded: in at their 1/2.2 power. The boost
+        // taken as it is was 2^2.2 = 4.6 times the light at 200%, past the 3.2 the panel opens: the highlights
+        // clipped and the colours saturated
+        let factors = [gains.0, gains.1, gains.2].map { Float(pow($0 * light * Double(boost), 1 / 2.2)) }
         if display.gamma == nil { display.gamma = GammaScale(display.id) }
         display.gamma?.set(factors)
     }
@@ -443,11 +456,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     /// A brightness key with the pointer on a display macOS can't dim: Brilho
     /// does it, in macOS's steps (sixteenths, or sixty-fourths with
-    /// Option-Shift), and learns it once the keys stop.
+    /// Option-Shift), and learns it once the keys stop. On the built-in display
+    /// it takes only brightness up at full: XDR on, in any light, and an eighth
+    /// of the boost more each time. Down stays macOS's, and the first one ends
+    /// XDR (track() sees the backlight go), so the two never both act.
     func brightnessKey(up: Bool, fine: Bool) -> Bool {
         let pointer = NSEvent.mouseLocation
         guard calibration == nil, measuring == nil, let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),
-              let id = displayID(screen), let display = displays[id], display.control != .native, display.ready else { return false }
+              let id = displayID(screen), let display = displays[id], display.ready else { return false }
+        if display.control == .native {
+            // At full by macOS's own reading: Brilho's lags a key just pressed by the moment it waits to see who it was
+            guard up, xdrPossible(display), display.level > 1 || (Backlight.get(id) ?? 0) > 0.999 else { return false }
+            let step = (maxBoost - 1) / (fine ? 32 : 8)
+            display.level = min((((max(display.level, 1) - 1) / step).rounded() + 1) * step + 1, maxBoost)
+            if !xdr { heldBoostLight = light }
+            display.target = display.level
+            display.pending = nil
+            display.keyedAt = Date()
+            applyGamma(display)
+            hud.show(1, on: screen)
+            return true
+        }
         let step = fine ? 1.0 / 64 : 1.0 / 16
         display.level = min(max(((display.level / step).rounded() + (up ? 1 : -1)) * step, 0), 1)
         display.target = display.level
@@ -484,13 +513,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard enabled, let light else { return }
         if lightIsEstimate {
             display.offset = display.backlight - display.levels.setting(nits: goalNits(display, light))
+        } else if Learned.censored(display.level, wanted: wantedSetting(display, light), range: 0...(xdrPossible(display) ? maxBoost : 1)) {
+            log("\(display.name): \(display.level > 0.5 ? "as bright" : "as dim") as it goes, as the light asks: nothing to learn")
         } else {
-            learnBrightness(display, display.backlight - display.offset, at: light)
+            learnBrightness(display, display.level - display.offset, at: light)
         }
     }
 
+    /// The setting the curve asks for, past 1 where it wants more than the
+    /// display's white (in the XDR boost's terms).
+    func wantedSetting(_ display: Display, _ light: Double) -> Double {
+        let nits = goalNits(display, light), white = display.levels.nits(1)
+        return nits > white ? nits / white : display.levels.setting(nits: nits)
+    }
+
     func learnBrightness(_ display: Display, _ brightness: Double, at light: Double) {
-        let setting = min(max(brightness, 0), 1) // XDR is never learnt: it's a switch
+        let setting = min(max(brightness, 0), display.builtin ? maxBoost : 1) // past 1, the XDR boost
         let nits = display.levels.nits(setting)
         display.brightness.learn(x: light, value: log10(nits), context: now.context, setting: setting, mode: display.mode)
         stored[display.key, default: Stored()].brightness = display.brightness.adjustments
@@ -584,34 +622,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    func startXDR() {
-        guard !xdr, let builtin else { return }
-        guard !lightIsEstimate, (light ?? 0) >= xdrLight else { return log("XDR: only in bright light, above 1000 lux") }
-        xdr = true
-        levelBeforeXDR = builtin.level
-        builtin.target = xdrLevel
-        startRamp()
-        updateIcon()
-        log("XDR on")
+    /// Whether the built-in display can go past its SDR white now: an XDR panel,
+    /// with Auto Brightness on, the lid open and the gamma table Brilho's to
+    /// scale. By itself it only does in sunlight (Automatic XDR, and the curve's
+    /// prior); by hand, with brightness up at full or the slider, in any light.
+    func xdrPossible(_ display: Display) -> Bool {
+        guard display.builtin, enabled, !lightIsEstimate, light != nil, !fluxRunning, calibration == nil, measuring == nil
+        else { return false }
+        return (screen(display.id)?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
     }
 
-    /// Back to SDR: gradually from the panel, at once when the display went or the user dimmed it.
-    func endXDR(gradually: Bool = false) {
-        guard xdr else { return boost.off() }
-        xdr = false
-        if gradually, let builtin {
-            builtin.sliding = false
-            builtin.target = min(levelBeforeXDR, 1)
-            startRamp()
-        } else {
-            boost.off()
-        }
-        updateIcon()
-        log("XDR off")
+    /// Back to SDR at once, for measuring and calibrating, which compare SDR light.
+    func dropBoost() {
+        guard let builtin, builtin.level > 1 else { return boost.off() }
+        builtin.level = 1
+        builtin.target = 1
+        apply(builtin)
     }
 
     func updateIcon() {
-        statusItem.button?.image = NSImage(systemSymbolName: xdr ? "sun.max.fill" : "sun.max", accessibilityDescription: "Brilho")
+        statusItem.button?.image = NSImage(systemSymbolName: boosting ? "sun.max.fill" : "sun.max", accessibilityDescription: "Brilho")
         statusItem.button?.appearsDisabled = !enabled
     }
 }

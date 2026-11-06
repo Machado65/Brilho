@@ -47,6 +47,9 @@ struct CurveChart: View {
         .foregroundStyle(.secondary)
     }
 
+    /// Up to 600 nits, or past it where a curve goes there (the built-in display's XDR boost).
+    private var topNits: Double { series.contains { $0.day.contains { $0.nits > 600 } } ? 1200 : 600 }
+
     private var chart: some View {
         Chart {
             ForEach(series) { series in
@@ -76,7 +79,7 @@ struct CurveChart: View {
             }
         }
         .chartXScale(domain: 1...10000, type: .log)
-        .chartYScale(domain: 2...600, type: .log)
+        .chartYScale(domain: 2...topNits, type: .log)
         .chartXAxis {
             AxisMarks(values: [1.0, 10, 100, 1000, 10000]) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
@@ -84,7 +87,7 @@ struct CurveChart: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: [3.0, 10, 30, 100, 300]) { value in
+            AxisMarks(position: .leading, values: [3.0, 10, 30, 100, 300] + (topNits > 600 ? [1000] : [])) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                 AxisValueLabel { Text(label(value.as(Double.self) ?? 0)) }
             }

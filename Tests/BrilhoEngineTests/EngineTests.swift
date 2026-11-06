@@ -203,6 +203,19 @@ func decades(_ a: Double, _ b: Double, _ levels: Levels = .builtinGuess) -> Doub
         #expect(rig.saved?.displays["builtin"]?.brightness.count == 1)
     }
 
+    @Test func fullInTheSunIsntLearnt() {
+        // Put to full on its way there, with the light asking for more than the panel has: learnt, that would pull the
+        // curve down to the panel's limit
+        let rig = Rig(screens: [FakeScreen(at: 0.3)], lux: 13000)
+        rig.run(1)
+        #expect(rig.panel.hardware! < 0.98)
+        rig.panel.hardware = 1
+        rig.run(4)
+        #expect(rig.saved?.displays["builtin"]?.brightness.isEmpty ?? true)
+        #expect(rig.logs.contains { $0.contains("nothing to learn") })
+        #expect(rig.panel.hardware == 1)
+    }
+
     @Test func aScreenItCantSetIsntLearntFrom() {
         let rig = Rig()
         rig.panel.refuses = true

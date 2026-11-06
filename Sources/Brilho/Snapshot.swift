@@ -16,6 +16,7 @@ func snapshot(to path: String, dark: Bool) {
     model.warmthKelvin = 3900
     model.place = "Sunsets for 38.72° N, 9.14° W"
     model.xdrAvailable = true
+    model.xdr = true
     model.canCalibrate = true
     model.openAtLogin = true
     model.rows = [
@@ -27,11 +28,11 @@ func snapshot(to path: String, dark: Bool) {
                        software: false, measurable: false, calibrated: true),
     ]
     let samples = stride(from: 0.0, through: 4.0, by: 0.1).map { pow(10, $0) }
-    func curve(_ scale: Double) -> [PanelModel.Point] {
-        samples.map { PanelModel.Point(lux: $0, nits: min(scale * (35 + 3.5 * pow($0, 2.0 / 3)), 480)) }
+    func curve(_ scale: Double, top: Double = 480) -> [PanelModel.Point] {
+        samples.map { PanelModel.Point(lux: $0, nits: min(scale * (35 + 3.5 * pow($0, 2.0 / 3)), top)) }
     }
     model.series = [
-        PanelModel.Series(id: 1, name: "Built-in", slot: 0, day: curve(1.1), night: curve(0.8),
+        PanelModel.Series(id: 1, name: "Built-in", slot: 0, day: curve(1.1, top: 960), night: curve(0.8, top: 960),
                           adjustments: [PanelModel.Point(lux: 182, nits: 186)]),
         PanelModel.Series(id: 2, name: "PA279CRV", slot: 1, day: curve(0.9), night: nil, adjustments: []),
     ]

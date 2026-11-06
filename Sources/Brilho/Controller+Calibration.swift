@@ -23,7 +23,7 @@ extension Controller {
     func measure(_ display: Display, then next: (() -> Void)? = nil) {
         guard measuring == nil, calibration == nil, display.measurable else { return }
         popover.performClose(nil)
-        endXDR()
+        dropBoost()
         measuring = display.id
         let id = display.id, before = display.backlight
         log("\(display.name): measuring")
@@ -62,7 +62,7 @@ extension Controller {
         guard let target = displays[id], !target.builtin, let builtin,
               let builtinScreen = screen(builtin.id), let targetScreen = screen(id) else { return }
         popover.performClose(nil)
-        endXDR()
+        dropBoost()
         // The square has to be the backlight alone: no dimming or warming in the gamma table
         target.dim = 1
         target.gamma?.reset()

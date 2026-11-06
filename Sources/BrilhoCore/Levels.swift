@@ -66,8 +66,11 @@ public struct Levels: Sendable {
     public var minNits: Double { points[0].nits }
     public var maxNits: Double { points[points.count - 1].nits }
 
+    /// The light at a setting. Past 1 it's the XDR boost, which multiplies the
+    /// white of 1.
     public func nits(_ setting: Double) -> Double {
-        pow(10, interpolate(points.map { ($0.setting, log10($0.nits)) }, at: setting))
+        if setting > 1 { return nits(1) * setting }
+        return pow(10, interpolate(points.map { ($0.setting, log10($0.nits)) }, at: setting))
     }
 
     public func setting(nits: Double) -> Double {
