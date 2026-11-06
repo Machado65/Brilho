@@ -27,6 +27,7 @@ final class Display {
     var ready: Bool // a DDC display's brightness arrives a moment after it does
     var sliding = false // brightness being set from the panel: hands off until the slider lets go
     var keyedAt: Date? // brightness keys pressed on it: learnt once they stop
+    var keyLeftAt = Date.distantPast // the last brightness key Brilho left to macOS, on a display macOS dims
     var adjustingContrast = false
     var followingContrast = false
     var polling = false

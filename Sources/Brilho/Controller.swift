@@ -277,15 +277,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func track(_ display: Display) {
         guard display.ready, !display.sliding else { return }
         if let keyedAt = display.keyedAt {
-            // Unless a key Brilho left to macOS came since (brightness down, out of XDR): that's the one to see to, below,
-            // at once, and to learn once it settles
-            if display.control == .native, let brightness = Backlight.get(display.id), abs(brightness - display.backlight) > 0.01 {
-                display.keyedAt = nil
-            } else {
-                guard Date().timeIntervalSince(keyedAt) > 1.5 else { return }
-                display.keyedAt = nil
-                manual(display)
+            let waited = Date().timeIntervalSince(keyedAt) > 1.5
+            // macOS's backlight away from where Brilho's keys left it
+            let moved = display.control == .native && Backlight.get(display.id).map { abs($0 - display.backlight) > 0.01 } == true
+            if moved, display.keyLeftAt < keyedAt, !waited {
+                // With no key of its own since: macOS acting on one of Brilho's as well. Back where Brilho has it
+                log("\(display.name): macOS moved it after a key Brilho took: back to \(percent(display.backlight))")
+                Backlight.set(display.id, display.backlight)
+                return
             }
+            guard moved || waited else { return }
+            display.keyedAt = nil
+            // Moved by a key macOS had since (brightness down from full), it's that one to see to, below, and to learn
+            // once it settles
+            if !moved { manual(display) }
         }
 
         // Brightness keys and the system can change a native display; the others only change from Brilho, or a DDC one's buttons
@@ -293,7 +298,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let brightness = Backlight.get(display.id) else { return }
             if abs(brightness - display.backlight) > 0.01 {
                 if display.level > 1 {
-                    // Dimmed from under the boost (a key Brilho didn't catch, or the system): out of it at once
+                    // Dimmed from under the boost (by the system, or Control Center's slider): out of it at once
                     display.level = 1
                     display.target = 1
                     applyGamma(display)
@@ -458,23 +463,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// A brightness key with the pointer on a display macOS can't dim: Brilho
     /// does it, in macOS's steps (sixteenths, or sixty-fourths with
     /// Option-Shift), and learns it once the keys stop. On the built-in display
-    /// it takes only brightness up at full: XDR on, in any light, and an eighth
-    /// of the boost more each time. Down stays macOS's, and the first one ends
-    /// XDR (track() sees the backlight go), so the two never both act.
+    /// it takes XDR's: brightness up at full turns it on, in any light, and in
+    /// it both keys move the boost an eighth at a time, down to full, where XDR
+    /// ends. Below full the keys are macOS's.
     func brightnessKey(up: Bool, fine: Bool) -> Bool {
         let pointer = NSEvent.mouseLocation
         guard calibration == nil, measuring == nil, let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),
               let id = displayID(screen), let display = displays[id], display.ready else { return false }
         if display.control == .native {
             // At full by macOS's own reading: Brilho's lags a key just pressed by the moment it waits to see who it was
-            guard up, xdrPossible(display), display.level > 1 || (Backlight.get(id) ?? 0) > 0.999 else { return false }
+            guard xdrPossible(display), display.level > 1 || (up && (Backlight.get(id) ?? 0) > 0.999) else {
+                display.keyLeftAt = Date()
+                return false
+            }
             let step = (maxBoost - 1) / (fine ? 32 : 8)
-            display.level = min((((max(display.level, 1) - 1) / step).rounded() + 1) * step + 1, maxBoost)
-            if !xdr { heldBoostLight = light }
+            let steps = ((max(display.level, 1) - 1) / step).rounded() + (up ? 1 : -1)
+            display.level = min(max(steps * step + 1, 1), maxBoost)
+            if !xdr, display.level > 1 { heldBoostLight = light }
             display.target = display.level
             display.pending = nil
             display.keyedAt = Date()
-            applyGamma(display)
+            apply(display) // the backlight at full under the boost, and the boost
             updateBoosting()
             hud.show(display.level, top: maxBoost, on: screen)
             return true
